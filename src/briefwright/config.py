@@ -2,11 +2,8 @@
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-DEFAULT_QUERY = (
-    "How should a production question-answering system combine retrieval, "
-    "a multi-agent workflow, and LLM guardrails? Include a worked precision@k "
-    "example from the sample judgments and call out prompt-injection risk."
-)
+# A real SciFact dev claim. The retriever has a stored MiniLM vector for this text.
+DEFAULT_QUERY = "Birth-weight is positively associated with breast cancer."
 
 
 class Settings(BaseSettings):
@@ -28,5 +25,6 @@ class Settings(BaseSettings):
     request_timeout_s: float = 60.0
     python_timeout_s: float = 2.0
     memory_path: str = "data/memory.json"
+    corpus_dir: str = ""
     auto_approve: bool = True
     log_level: str = "INFO"

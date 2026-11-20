@@ -7,10 +7,9 @@ def test_eval_scores_are_computed_not_hardcoded(settings) -> None:
     assert report["backend"] == "mock"
     assert 0.0 < report["macro_score"] <= 1.0
     by_id = {row["id"]: row for row in report["tasks"]}
-    assert by_id["architecture"]["guardrail_passed"]
-    assert "precision_at_" in by_id["architecture"]["terms_hit"] or any(
-        term.startswith("precision_at_") for term in by_id["architecture"]["terms_hit"]
-    )
-    assert by_id["architecture"]["forbidden_hits"] == []
-    assert by_id["architecture"]["composite"] >= 0.8
+    assert by_id["birth-weight"]["guardrail_passed"]
+    assert "precision_at_" in by_id["birth-weight"]["terms_hit"]
+    assert "utero" in by_id["birth-weight"]["terms_hit"]
+    assert by_id["birth-weight"]["forbidden_hits"] == []
+    assert by_id["birth-weight"]["composite"] >= 0.8
     assert report["macro_score"] >= 0.8

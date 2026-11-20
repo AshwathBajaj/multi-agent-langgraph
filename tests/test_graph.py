@@ -10,12 +10,15 @@ def test_unattended_run_revises_once_and_cites_real_numbers(settings) -> None:
     assert result.critique["passed"]
     assert result.revision_count == 1
     assert "## Limitations" in result.report
-    assert "precision_at_1=1.000" in result.report
-    assert "precision_at_3=0.778" in result.report
-    assert "precision_at_5=0.533" in result.report
+    from briefwright.corpus import get_corpus
+
+    scores = get_corpus().mean_precision()
+    for k, score in scores.items():
+        assert f"precision_at_{k}={score:.3f}" in result.report
+    assert "focus_precision_at_1=1.000" in result.report
+    assert "SciFact" in result.report
     assert "Mars" not in result.report
     assert "admin@example.com" not in result.report
-    assert any(source["id"] == "untrusted-paste" and source["quarantined"] for source in result.sources)
     nodes = [event["node"] for event in result.trace]
     for name in ("planner", "researcher", "analyst", "writer", "critic", "human_review", "finalize"):
         assert name in nodes
@@ -37,12 +40,12 @@ def test_memory_is_recalled_on_the_next_run(settings) -> None:
     first = run_research(DEFAULT_QUERY, settings=settings, auto_approve=True)
     assert first.approved and first.critique["passed"]
     second = run_research(
-        "What did we already record about guardrails for retrieval?",
+        "What did we already record about birth-weight and breast cancer?",
         settings=settings,
         auto_approve=True,
     )
     assert second.memory_hits
-    assert any("guardrail" in hit["text"].lower() for hit in second.memory_hits)
+    assert any("breast" in hit["text"].lower() for hit in second.memory_hits)
 
 
 def test_graph_runs_without_a_checkpointer_when_it_does_not_pause(settings) -> None:

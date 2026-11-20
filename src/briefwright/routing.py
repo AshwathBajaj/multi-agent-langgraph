@@ -41,7 +41,8 @@ def decide_next(state: ResearchState) -> str:
     max_rounds = int(state.get("max_research_rounds") or 0)
     if not usable_sources(state) and rounds < max_rounds:
         return "research"
-    if needs_analysis(state.get("query", "")) and not state.get("analysis_attempted"):
+    wants_metric = bool(state.get("needs_metric")) or needs_analysis(state.get("query", ""))
+    if wants_metric and not state.get("analysis_attempted"):
         return "analyze"
     if not (state.get("draft") or "").strip():
         return "write"

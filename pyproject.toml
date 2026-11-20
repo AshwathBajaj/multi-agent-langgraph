@@ -24,6 +24,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+embed = ["fastembed>=0.4,<1"]
 dev = [
   "pytest>=8.3",
   "ruff>=0.8",
@@ -41,7 +42,7 @@ Homepage = "https://github.com/AshwathBajaj/multi-agent-langgraph"
 where = ["src"]
 
 [tool.setuptools.package-data]
-briefwright = ["py.typed", "corpus/*.json", "eval/*.json"]
+briefwright = ["py.typed", "corpus/sample/*", "eval/*.json"]
 
 [tool.ruff]
 line-length = 110

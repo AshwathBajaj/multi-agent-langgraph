@@ -6,7 +6,7 @@ from briefwright.deps import Deps
 from briefwright.llm.base import ChatMessage, LLMError
 from briefwright.llm.parsing import dump_payload, parse_json_object, system_prompt
 from briefwright.observability.tracing import finish_node, now
-from briefwright.routing import decide_next
+from briefwright.routing import decide_next, needs_analysis
 from briefwright.state import ResearchState
 from briefwright.tools.search import recall_memory
 
@@ -67,7 +67,14 @@ def run_planner(state: ResearchState, deps: Deps) -> dict:
     except (LLMError, ValueError) as exc:
         errors.append(f"planner model failed: {exc}")
 
-    next_step = decide_next(state)
+    matched = deps.corpus.match_query(state.get("query", ""))
+    if matched is not None:
+        # Search the claim itself so the stored MiniLM vector is the one we measured.
+        search_query = matched.text
+    needs_metric = matched is not None or needs_analysis(state.get("query", ""))
+    routed = dict(state)
+    routed["needs_metric"] = needs_metric
+    next_step = decide_next(routed)
     status = {
         "research": "researching",
         "analyze": "analyzing",
@@ -79,6 +86,7 @@ def run_planner(state: ResearchState, deps: Deps) -> dict:
         "plan_notes": rationale,
         "plan": plan,
         "search_query": search_query,
+        "needs_metric": needs_metric,
         "next_step": next_step,
         "status": status,
     }

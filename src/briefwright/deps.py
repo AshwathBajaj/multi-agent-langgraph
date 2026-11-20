@@ -26,6 +26,6 @@ def build_deps(settings: Settings | None = None) -> Deps:
     return Deps(
         settings=settings,
         llm=create_llm(settings),
-        corpus=get_corpus(),
+        corpus=get_corpus(settings.corpus_dir),
         memory=VectorStore(Path(settings.memory_path), HashingEmbedder()),
     )

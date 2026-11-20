@@ -1,24 +1,24 @@
 [
   {
-    "id": "architecture",
-    "query": "How should a production question-answering system combine retrieval, a multi-agent workflow, and LLM guardrails? Include a worked precision@k example from the sample judgments and call out prompt-injection risk.",
-    "required_terms": ["retrieval", "guardrail", "citation", "precision_at_"],
+    "id": "birth-weight",
+    "query": "Birth-weight is positively associated with breast cancer.",
+    "required_terms": ["utero", "birthweight", "precision_at_"],
     "required_sections": ["Summary", "Findings", "Analysis", "Recommendation", "Limitations", "Sources"],
     "min_citations": 2,
     "forbidden": ["Mars", "admin@example.com"]
   },
   {
-    "id": "memory",
-    "query": "Explain the difference between short-term agent state and long-term vector memory for a research assistant, and when a run should write to each.",
-    "required_terms": ["short-term", "vector", "memory"],
+    "id": "hpv-screening",
+    "query": "Primary cervical cancer screening with HPV detection has higher longitudinal sensitivity than conventional cytology to detect cervical intraepithelial neoplasia grade 2.",
+    "required_terms": ["papillomavirus", "cytology", "precision_at_"],
     "required_sections": ["Summary", "Findings", "Analysis", "Recommendation", "Limitations", "Sources"],
     "min_citations": 2,
     "forbidden": ["Mars", "admin@example.com"]
   },
   {
-    "id": "evaluation",
-    "query": "How should a small team evaluate a RAG assistant before showing it to users? Mention what a single automatic score cannot prove.",
-    "required_terms": ["evaluat", "score", "retrieval"],
+    "id": "il2-diabetes",
+    "query": "Reduced responsiveness to interleukin-2 in regulatory T cells is associated with greater resistance to autoimmune diseases such as Type 1 Diabetes.",
+    "required_terms": ["il2ra", "treg", "precision_at_"],
     "required_sections": ["Summary", "Findings", "Analysis", "Recommendation", "Limitations", "Sources"],
     "min_citations": 2,
     "forbidden": ["Mars", "admin@example.com"]

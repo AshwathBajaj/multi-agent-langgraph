@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from briefwright.config import DEFAULT_QUERY, Settings
+from briefwright.corpus import get_corpus
 from briefwright.eval.runner import run_eval
 from briefwright.service import run_research
 
@@ -32,6 +33,12 @@ def main(argv: list[str] | None = None) -> int:
     eval_parser.add_argument("--output", type=Path, default=None)
     eval_parser.add_argument("--backend", choices=["mock", "openai"], default=None)
 
+    retrieve_parser = sub.add_parser(
+        "retrieve-eval",
+        help="Precision@k of the MiniLM index against SciFact labels (no LLM)",
+    )
+    retrieve_parser.add_argument("--corpus-dir", default="")
+
     serve_parser = sub.add_parser("serve", help="Start the API")
     serve_parser.add_argument("--host", default="127.0.0.1")
     serve_parser.add_argument("--port", type=int, default=8000)
@@ -44,6 +51,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run(args)
     if args.command == "eval":
         return _eval(args)
+    if args.command == "retrieve-eval":
+        return _retrieve_eval(args.corpus_dir)
     if args.command == "serve":
         return _serve(args.host, args.port)
     if args.command == "ui":
@@ -98,6 +107,23 @@ def _eval(args: argparse.Namespace) -> int:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(text + "\n", encoding="utf-8")
     print(text)
+    return 0
+
+
+def _retrieve_eval(corpus_dir: str) -> int:
+    corpus = get_corpus(corpus_dir)
+    scores = corpus.mean_precision()
+    payload = {
+        "dataset": corpus.meta.get("dataset"),
+        "sample": bool(corpus.meta.get("sample")),
+        "embedder": corpus.embedder_name,
+        "llm": None,
+        "n_documents": len(corpus.documents),
+        "n_labeled_queries": len(corpus.queries),
+        "precision_at": {str(k): round(score, 6) for k, score in scores.items()},
+        "note": "Dense cosine over stored MiniLM vectors. No language model was called.",
+    }
+    print(json.dumps(payload, indent=2))
     return 0
 
 

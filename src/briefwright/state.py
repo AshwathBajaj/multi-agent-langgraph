@@ -15,6 +15,7 @@ class ResearchState(TypedDict, total=False):
     plan_notes: str
     next_step: str
     search_query: str
+    needs_metric: bool
     sources: list[dict[str, Any]]
     memory_hits: list[dict[str, Any]]
     research_notes: list[str]

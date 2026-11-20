@@ -17,6 +17,15 @@ for k in (1, 3, 5):
     if scores:
         lines.append("precision_at_%s=%.3f" % (k, sum(scores) / len(scores)))
 lines.append("n_queries=%s" % len(rows))
+focus = str(DATA.get("focus_query_id") or "")
+for row in rows:
+    if str(row.get("query_id")) != focus:
+        continue
+    for k in (1, 3, 5):
+        flags = row["relevant"][:k]
+        if flags:
+            lines.append("focus_precision_at_%s=%.3f" % (k, sum(flags) / len(flags)))
+    break
 print("\\n".join(lines))
 """
 
@@ -114,10 +123,11 @@ def render_offline_draft(payload: dict) -> str:
             [
                 "## Limitations",
                 (
-                    "The corpus is a small local collection, and the embedder is a hashing trick, "
-                    "so recall here is illustrative. The Python tool is a demo boundary rather than "
-                    "a hardened sandbox. Any precision figure describes only the bundled judgment "
-                    f"log. [{anchor}]"
+                    "The index behind this brief is the committed SciFact sample, 30 abstracts "
+                    "and 3 labeled dev claims, not the full 5,183-document corpus. Precision "
+                    "figures are dense retrieval with all-MiniLM-L6-v2 against SciFact evidence "
+                    "labels. The findings quote those abstracts. The offline writer is a "
+                    f"deterministic stand-in, not a live model. [{anchor}]"
                 ),
             ]
         )

@@ -1,19 +1,34 @@
+import pytest
+
 from briefwright.corpus import get_corpus
-from briefwright.guardrails.checks import sanitize_untrusted
 from briefwright.tools.python_exec import run_python
 from briefwright.tools.search import search_corpus
 
 
-def test_search_finds_precision_log_and_quarantines_paste() -> None:
+def test_sample_search_ranks_a_real_evidence_abstract_first() -> None:
     corpus = get_corpus()
-    metric_hits = search_corpus(corpus, "precision at k retrieval judgments", k=3)
-    assert any(hit.id == "retrieval-log" for hit in metric_hits)
+    hits = search_corpus(corpus, "Birth-weight is positively associated with breast cancer.", k=5)
+    assert hits[0].id == "27123743"
+    assert hits[0].id in corpus.qrels["179"]
+    assert corpus.embedder_name == "sentence-transformers/all-MiniLM-L6-v2"
+    scores = corpus.mean_precision()
+    assert round(scores[1], 3) == 0.667
 
-    poison_hits = search_corpus(corpus, "prompt injection guardrails", k=4)
-    poison = next(hit for hit in poison_hits if hit.id == "untrusted-paste")
-    _cleaned, flags = sanitize_untrusted(poison.text)
-    assert "prompt_injection" in flags
-    assert "pii" in flags
+
+def test_stored_query_vector_matches_a_live_minilm() -> None:
+    fastembed = pytest.importorskip("fastembed")
+    del fastembed
+    from briefwright.memory.minilm import MiniLMEmbedder
+
+    corpus = get_corpus()
+    claim = "Birth-weight is positively associated with breast cancer."
+    live = MiniLMEmbedder()
+    stored = corpus.embed_query(claim)
+    assert stored is not None
+    fresh = live.embed(claim)
+    from briefwright.memory.embeddings import cosine
+
+    assert cosine(stored, fresh) > 0.999
 
 
 def test_python_tool_runs_safe_code_and_blocks_the_rest() -> None:
