@@ -1,0 +1,16 @@
+{
+  "dataset": "SciFact",
+  "split": "dev",
+  "embedder": "sentence-transformers/all-MiniLM-L6-v2",
+  "retrieval": "dense cosine, title + abstract",
+  "n_documents": 5183,
+  "n_labeled_queries": 188,
+  "precision": {
+    "1": 0.617021,
+    "3": 0.281915,
+    "5": 0.187234,
+    "10": 0.1
+  },
+  "llm": null,
+  "note": "Retrieval only. No language model was used for these figures."
+}

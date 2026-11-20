@@ -1,0 +1,26 @@
+[
+  {
+    "id": "birth-weight",
+    "query": "Birth-weight is positively associated with breast cancer.",
+    "required_terms": ["utero", "birthweight", "precision_at_"],
+    "required_sections": ["Summary", "Findings", "Analysis", "Recommendation", "Limitations", "Sources"],
+    "min_citations": 2,
+    "forbidden": ["Mars", "admin@example.com"]
+  },
+  {
+    "id": "hpv-screening",
+    "query": "Primary cervical cancer screening with HPV detection has higher longitudinal sensitivity than conventional cytology to detect cervical intraepithelial neoplasia grade 2.",
+    "required_terms": ["papillomavirus", "cytology", "precision_at_"],
+    "required_sections": ["Summary", "Findings", "Analysis", "Recommendation", "Limitations", "Sources"],
+    "min_citations": 2,
+    "forbidden": ["Mars", "admin@example.com"]
+  },
+  {
+    "id": "il2-diabetes",
+    "query": "Reduced responsiveness to interleukin-2 in regulatory T cells is associated with greater resistance to autoimmune diseases such as Type 1 Diabetes.",
+    "required_terms": ["il2ra", "treg", "precision_at_"],
+    "required_sections": ["Summary", "Findings", "Analysis", "Recommendation", "Limitations", "Sources"],
+    "min_citations": 2,
+    "forbidden": ["Mars", "admin@example.com"]
+  }
+]

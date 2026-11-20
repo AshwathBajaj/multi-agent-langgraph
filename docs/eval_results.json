@@ -1,0 +1,113 @@
+{
+  "backend": "mock",
+  "model": "mock-research-v1",
+  "n_tasks": 3,
+  "macro_score": 1.0,
+  "tasks": [
+    {
+      "id": "birth-weight",
+      "composite": 1.0,
+      "term_coverage": 1.0,
+      "terms_hit": [
+        "utero",
+        "birthweight",
+        "precision_at_"
+      ],
+      "terms_missed": [],
+      "section_coverage": 1.0,
+      "sections_hit": [
+        "Summary",
+        "Findings",
+        "Analysis",
+        "Recommendation",
+        "Limitations",
+        "Sources"
+      ],
+      "citation_coverage": 1.0,
+      "valid_citations": [
+        "27123743",
+        "17450673",
+        "25973484",
+        "16322674",
+        "23557241"
+      ],
+      "forbidden_hits": [],
+      "guardrail_passed": true,
+      "revision_count": 1,
+      "quarantined": [],
+      "prompt_tokens": 12440,
+      "completion_tokens": 2732,
+      "cost_usd": 0.0
+    },
+    {
+      "id": "hpv-screening",
+      "composite": 1.0,
+      "term_coverage": 1.0,
+      "terms_hit": [
+        "papillomavirus",
+        "cytology",
+        "precision_at_"
+      ],
+      "terms_missed": [],
+      "section_coverage": 1.0,
+      "sections_hit": [
+        "Summary",
+        "Findings",
+        "Analysis",
+        "Recommendation",
+        "Limitations",
+        "Sources"
+      ],
+      "citation_coverage": 1.0,
+      "valid_citations": [
+        "6561200",
+        "27873158",
+        "9764256",
+        "27446873",
+        "28617573"
+      ],
+      "forbidden_hits": [],
+      "guardrail_passed": true,
+      "revision_count": 1,
+      "quarantined": [],
+      "prompt_tokens": 19603,
+      "completion_tokens": 3250,
+      "cost_usd": 0.0
+    },
+    {
+      "id": "il2-diabetes",
+      "composite": 1.0,
+      "term_coverage": 1.0,
+      "terms_hit": [
+        "il2ra",
+        "treg",
+        "precision_at_"
+      ],
+      "terms_missed": [],
+      "section_coverage": 1.0,
+      "sections_hit": [
+        "Summary",
+        "Findings",
+        "Analysis",
+        "Recommendation",
+        "Limitations",
+        "Sources"
+      ],
+      "citation_coverage": 1.0,
+      "valid_citations": [
+        "11899391",
+        "2388819",
+        "13940200",
+        "13923140",
+        "5567005"
+      ],
+      "forbidden_hits": [],
+      "guardrail_passed": true,
+      "revision_count": 1,
+      "quarantined": [],
+      "prompt_tokens": 10894,
+      "completion_tokens": 3033,
+      "cost_usd": 0.0
+    }
+  ]
+}

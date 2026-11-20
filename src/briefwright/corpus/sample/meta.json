@@ -1,0 +1,23 @@
+{
+  "dataset": "SciFact",
+  "split": "dev",
+  "source_url": "https://scifact.s3-us-west-2.amazonaws.com/release/latest/data.tar.gz",
+  "paper": "Wadden et al., Fact or Fiction: Verifying Scientific Claims, EMNLP 2020",
+  "paper_url": "https://aclanthology.org/2020.emnlp-main.609/",
+  "corpus_origin": "S2ORC abstracts bundled in the SciFact release",
+  "embedder": "sentence-transformers/all-MiniLM-L6-v2",
+  "embedder_license": "Apache-2.0",
+  "embedding_dim": 384,
+  "sample": true,
+  "n_documents": 30,
+  "n_labeled_queries": 3,
+  "full_dev_documents": 5183,
+  "full_dev_labeled_queries": 188,
+  "relevance": "A document is relevant when it is an evidence abstract in the SciFact dev claim.",
+  "full_dense_precision": {
+    "1": 0.617021,
+    "3": 0.281915,
+    "5": 0.187234,
+    "10": 0.1
+  }
+}
