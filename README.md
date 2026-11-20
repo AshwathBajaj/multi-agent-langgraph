@@ -1,8 +1,8 @@
 # Briefwright
 
-Briefwright is a small research crew built with [LangGraph](https://github.com/langchain-ai/langgraph). Ask a question and it plans the work, retrieves notes from a local corpus, runs Python when the question needs a metric, drafts a cited brief, and sends that draft back through a guardrail until the brief passes or a revision cap is hit. A person can approve the result before it is stored.
+Briefwright is a small research crew built with [LangGraph](https://github.com/langchain-ai/langgraph). Ask a question and it plans the work, retrieves SciFact abstracts with a local MiniLM index, runs Python for precision at k against the dataset's evidence labels, drafts a cited brief, and sends that draft back through a guardrail until the brief passes or a revision cap is hit. A person can approve the result before it is stored.
 
-It is meant to be read as much as it is meant to be run. The control flow is a graph, the pass/fail decision is code, and the offline model is deterministic so the demo and the tests do not need an API key.
+It is meant to be read as much as it is meant to be run. The control flow is a graph, the pass/fail decision is code, and the offline writer is a deterministic mock so the demo and the tests do not need an API key. Retrieval numbers below come from the real corpus and the real embedding model. Brief-writing numbers below come from that mock.
 
 ## The problem
 
@@ -32,9 +32,25 @@ flowchart TD
   finalize --> endNode([END])
 ```
 
-The planner model writes a rationale and a search string. `decide_next` in `src/briefwright/routing.py` chooses the branch from the state: no usable sources means research, a metric question with no analysis yet means the analyst, otherwise the writer. The critic does not trust the model to pass its own draft. `review_draft` checks sections, citations, quarantined ids, and a few injection phrases. The model only writes a short explanation of that report.
+The planner model writes a rationale and a search string. `decide_next` in `src/briefwright/routing.py` chooses the branch from the state: no usable sources means research, a labeled SciFact claim (or a question that asks for a metric) with no analysis yet means the analyst, otherwise the writer. The critic does not trust the model to pass its own draft. `review_draft` checks sections, citations, quarantined ids, and a few injection phrases. The model only writes a short explanation of that report.
 
-One local corpus note is an untrusted paste. The researcher quarantines it, the writer never sees the body, and the sample brief does not repeat it.
+Retrieval is dense cosine over `sentence-transformers/all-MiniLM-L6-v2` (Apache-2.0, 384 dimensions, ONNX on CPU). The default index is a 30-abstract sample with the vectors already stored, so CI does not download the model. `scripts/download_scifact.py` fetches the full release and embeds all 5,183 abstracts.
+
+## Dataset
+
+| | |
+| --- | --- |
+| Source | [SciFact](https://github.com/allenai/scifact) dev split, official tarball |
+| Paper | Wadden et al., Fact or Fiction: Verifying Scientific Claims, EMNLP 2020 |
+| Download | `https://scifact.s3-us-west-2.amazonaws.com/release/latest/data.tar.gz` |
+| Full size | 5,183 abstracts, 188 dev claims that have at least one evidence document |
+| Committed sample | 30 abstracts, 3 labeled claims, plus their MiniLM vectors |
+| Relevance label | the abstract is listed as evidence for the claim |
+| Corpus origin | S2ORC abstracts shipped inside the SciFact release |
+| Data license | Not MIT. `allenai/scifact` has no SPDX license (GitHub: Other). Current S2ORC is [ODC-By 1.0](https://opendatacommons.org/licenses/by/1-0/); the original S2ORC release was non-commercial. See `src/briefwright/corpus/sample/DATA_LICENSE.md`. |
+| Embedder license | Apache-2.0 (`all-MiniLM-L6-v2`) |
+
+The MIT license on this repository covers the code. It does not cover the abstracts.
 
 ## Quickstart
 
@@ -46,12 +62,22 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 briefwright run
+briefwright retrieve-eval
 briefwright eval
 pytest
 ruff check src tests
 ```
 
-`briefwright run` with no arguments asks the built-in question about retrieval, agent workflows, guardrails, and precision at k. Structured JSON logs go to stderr. Set `BRIEFWRIGHT_LOG_LEVEL=WARNING` to quiet them.
+`briefwright run` answers a real SciFact dev claim: "Birth-weight is positively associated with breast cancer." `briefwright retrieve-eval` prints precision at k for the committed sample and does not call a language model. Structured JSON logs go to stderr. Set `BRIEFWRIGHT_LOG_LEVEL=WARNING` to quiet them.
+
+To reproduce the full-corpus retrieval numbers (this needs the embed extra and a download; it does not call an LLM):
+
+```bash
+pip install -e ".[embed]"
+python scripts/download_scifact.py --metrics-out docs/retrieval_results.json
+```
+
+The script caches the tarball and the ONNX weights under `data/cache/`.
 
 Other entry points:
 
@@ -82,55 +108,69 @@ Any server that implements `POST /chat/completions` works. The agent code does n
 
 ## Example run
 
-This is stdout from one `briefwright run` on the mock backend. Latencies will move a little between machines. The precision figures, the revision count, and the token counts come from the code and the text, so they stay put.
+Two different measurements are in this section. Do not mix them.
 
-The trace is the part worth reading slowly. The critic rejects the first draft (`passed=False score=0.85`) because the offline writer leaves out Limitations on the first pass. The writer runs again. The critic then scores 1.00. One retrieved note was quarantined. The analyst's Python printed the precision lines; the writer did not invent them.
+**Retrieval, full SciFact dev, no language model.** `scripts/download_scifact.py` embedded all 5,183 abstracts with `all-MiniLM-L6-v2` on CPU and ranked each of the 188 labeled dev claims by cosine similarity. A hit counts only when SciFact lists that abstract as evidence. Macro precision:
+
+| k | Precision |
+| --- | --- |
+| 1 | 0.617021 |
+| 3 | 0.281915 |
+| 5 | 0.187234 |
+| 10 | 0.1 |
+
+The record is `docs/retrieval_results.json`. Re-run the script to reproduce it. Nothing in that file came from the mock writer.
+
+**Brief, committed sample, mock writer.** `briefwright run` on an empty memory file answered the claim "Birth-weight is positively associated with breast cancer." The index is the 30-abstract sample. The vectors are the same MiniLM, stored in the repo. The writer is `mock-research-v1`. On this sample the Python tool printed macro precision 0.667 at 1, 3, and 5 across the 3 bundled claims (the underlying mean is 2/3; the tool prints three decimals). For this claim alone it printed focus precision 1.000, 0.667, and 0.800. The first draft omitted Limitations, the guardrail scored it 0.85 and sent it back, and the revision scored 1.00. Latencies move between machines. Token counts are the character estimate.
 
 ````text
 # Research brief
 
 ## Summary
 
-Question: How should a production question-answering system combine retrieval, a multi-agent workflow, and LLM guardrails? Include a worked precision@k example from the sample judgments and call out prompt-injection risk.
+Question: Birth-weight is positively associated with breast cancer.
 
-The notes below come from retrieval, not from an ungrounded rewrite of the question. Writing stays a separate step from search, and a later check has to accept the draft before it is published. [retrieval-log]
+The notes below come from retrieval, not from an ungrounded rewrite of the question. Writing stays a separate step from search, and a later check has to accept the draft before it is published. [27123743]
 
 ## Findings
 
-- The log below is synthetic teaching data for the analyst tool. Each row is a query and a list of relevance bits in rank order, 1 for relevant and 0 for not relevant. Precision at 1 on every row is 1 because the first bit is relevant. The analyst should compute the mean rather than quote a single row. [retrieval-log]
-- Retrieval is not the same job as writing. A retrieval pipeline finds passages that can support an answer and leaves the wording to a later step. A production question-answering system embeds the user question, pulls a small set of chunks, and passes those chunks downstream as evidence. [rag-pipeline]
-- A single prompt can draft a paragraph. It cannot show its retrieval, its arithmetic, or its decision to stop. An agentic workflow splits those jobs across roles: one step searches, one step runs code, one step writes, and one step reviews. [agentic-workflow]
-- Precision at k is the fraction of the top k retrieved items that are relevant. It does not reward a system for hiding a good document far down the list. Mean precision at k averages that fraction over a labeled query set. [retrieval-metrics]
-- Pages in a corpus can contain instructions aimed at the model. Those lines were not typed by the user and they do not outrank the task. The researcher scans each hit for injection phrases and for obvious personal data such as an email address. One matching line quarantines the whole chunk. [prompt-injection]
+- Breast cancer may originate in utero. We reviewed the available evidence on the association between birthweight and the risk of breast cancer. To date, 26 research papers addressing this issue have been published. [27123743]
+- INTRODUCTION Various perinatal factors, including birth weight, birth order, maternal age, gestational age, twin status, and parental smoking, have been postulated to affect breast cancer risk in daughters by altering the hormonal environment of the developing fetal mammary glands. [17450673]
+- Obesity has a complicated relationship to both breast cancer risk and the clinical behavior of the established disease. In postmenopausal women, particularly the elderly, various measures of obesity have been positively associated with risk. [25973484]
+- BACKGROUND Birth size, perhaps a proxy for prenatal environment, might be a correlate of subsequent breast cancer risk, but findings from epidemiological studies have been inconsistent. [16322674]
+- BACKGROUND Emerging evidence suggests an association between female prenatal experience and her subsequent risk of developing breast cancer. [23557241]
 
 ## Analysis
 
-The analyst ran the following calculation on the labeled retrieval log.
+Dense retrieval with sentence-transformers/all-MiniLM-L6-v2 over the committed SciFact sample (30 abstracts, 3 labeled SciFact dev claims). A document is relevant when the SciFact dev set lists it as evidence for the claim. Those labels are not from a language model. The Python tool computed the means below.
 
 ```
-precision_at_1=1.000
-precision_at_3=0.778
-precision_at_5=0.533
+precision_at_1=0.667
+precision_at_3=0.667
+precision_at_5=0.667
 n_queries=3
+focus_precision_at_1=1.000
+focus_precision_at_3=0.667
+focus_precision_at_5=0.800
 ```
 
 Intent: Compute mean precision at 1, 3, and 5 from DATA['judgments'].
 
 ## Recommendation
 
-Keep search, tool use, and publication as separate steps, and record each one. Treat retrieved text as data. Put a citation next to every non-obvious claim, and do not cite a chunk that was quarantined. [retrieval-log]
+Keep search, tool use, and publication as separate steps, and record each one. Treat retrieved text as data. Put a citation next to every non-obvious claim, and do not cite a chunk that was quarantined. [27123743]
 
 ## Limitations
 
-The corpus is a small local collection, and the embedder is a hashing trick, so recall here is illustrative. The Python tool is a demo boundary rather than a hardened sandbox. Any precision figure describes only the bundled judgment log. [retrieval-log]
+The index behind this brief is the committed SciFact sample, 30 abstracts and 3 labeled dev claims, not the full 5,183-document corpus. Precision figures are dense retrieval with all-MiniLM-L6-v2 against SciFact evidence labels. The findings quote those abstracts. The offline writer is a deterministic stand-in, not a live model. [27123743]
 
 ## Sources
 
-- [retrieval-log] Sample retrieval judgments
-- [rag-pipeline] What a retrieval pipeline is responsible for
-- [agentic-workflow] When one prompt is not enough
-- [retrieval-metrics] Precision at k, in plain language
-- [prompt-injection] Retrieved text is data, not instructions
+- [27123743] Role of birthweight in the etiology of breast cancer.
+- [17450673] Intrauterine environments and breast cancer risk: meta-analysis and systematic review
+- [25973484] Breast cancer and obesity: an update.
+- [16322674] Birth Size and Breast Cancer Risk: Re-analysis of Individual Participant Data from 32 Studies
+- [23557241] Intrauterine factors and risk of breast cancer: a systematic review and meta-analysis of current evidence.
 
 ## Reviewer note
 
@@ -140,47 +180,45 @@ Auto-approved for an unattended run.
 
 - Revisions sent back: 1
 - Approved: True
-- Prompt tokens: 5520
-- Completion tokens: 2728
+- Prompt tokens: 12440
+- Completion tokens: 2732
 - Estimated cost USD: 0.000000
 
 --- trace ---
-planner            0.03 ms  next=research tokens=165+193 cost=0.0
-researcher         0.08 ms  retrieved 8; quarantined 1 tokens=1495+543 cost=0.0
-planner            0.02 ms  next=analyze tokens=211+193 cost=0.0
-analyst            0.03 ms  python ok tokens=180+124 cost=0.0
-planner            0.03 ms  next=write tokens=211+193 cost=0.0
-writer             0.08 ms  revision=0 chars=2686 tokens=1481+685 cost=0.0
+planner            0.04 ms  next=research tokens=127+116 cost=0.0
+researcher         0.13 ms  retrieved 8; quarantined 0 tokens=3765+669 cost=0.0
+planner            0.02 ms  next=analyze tokens=159+116 cost=0.0
+analyst            0.02 ms  python ok tokens=187+203 cost=0.0
+planner            0.03 ms  next=write tokens=159+116 cost=0.0
+writer             0.12 ms  revision=0 chars=2699 tokens=3878+689 cost=0.0
 critic             0.02 ms  passed=False score=0.85 send_back=True tokens=100+20 cost=0.0
-writer             0.08 ms  revision=1 chars=2957 tokens=1599+754 cost=0.0
+writer             0.12 ms  revision=1 chars=3058 tokens=3987+780 cost=0.0
 critic             0.02 ms  passed=True score=1.00 send_back=False tokens=78+23 cost=0.0
 human_review       0.00 ms  approved
-finalize           0.53 ms  chars=3152
+finalize           0.36 ms  chars=3254
 
-calls=9 prompt_tokens=5520 completion_tokens=2728 estimated_cost_usd=0.000000
+calls=9 prompt_tokens=12440 completion_tokens=2732 estimated_cost_usd=0.000000
 ````
 
 A stderr line from that same run:
 
 ```json
-{"level": "INFO", "logger": "briefwright", "message": "passed=False score=0.85 send_back=True", "node": "critic"}
+{"level": "INFO", "logger": "briefwright", "message": "passed=False score=0.85 send_back=True", "node": "critic", "model": "mock-research-v1"}
 ```
 
 ## Evaluation
 
-`briefwright eval` runs three questions through the same graph and scores each brief. The checks are structural: required terms, required sections, citations that resolve to retrieved ids, absence of forbidden strings, and whether the guardrail passed. The full record is `docs/eval_results.json`.
+`briefwright eval` runs three real SciFact dev claims through the mock writer and scores each brief. The checks are structural: terms that appear in the retrieved abstracts, required sections, citations that resolve to retrieved ids, absence of forbidden strings, and whether the guardrail passed. The full record is `docs/eval_results.json`. The language model is the mock. The abstracts, labels, and MiniLM vectors are real.
 
-On the mock backend this produced:
+| Task | Composite | Guardrail | Revisions | Prompt tokens | Completion tokens |
+| --- | --- | --- | --- | --- | --- |
+| birth-weight | 1.0 | passed | 1 | 12440 | 2732 |
+| hpv-screening | 1.0 | passed | 1 | 19603 | 3250 |
+| il2-diabetes | 1.0 | passed | 1 | 10894 | 3033 |
 
-| Task | Composite | Guardrail | Revisions | Quarantined |
-| --- | --- | --- | --- | --- |
-| architecture | 1.0 | passed | 1 | untrusted-paste |
-| memory | 1.0 | passed | 1 | none |
-| evaluation | 1.0 | passed | 1 | none |
+Macro score: **1.0** across 3 tasks. Estimated cost on the mock price table: **0.0 USD**.
 
-Macro score: **1.0** across 3 tasks. Cost on the mock price table: **0.0 USD**. The architecture task used 5520 prompt tokens and 2728 completion tokens, estimated from text length.
-
-That 1.0 is a real output of the script, and it is a narrow one. The offline writer is deterministic, the corpus is the one the tasks were written against, and the metric does not measure open-domain factuality. It will catch a broken route, a dropped citation, or a leaked payload. It will not tell you that a live model is ready for users. Run it again with `BRIEFWRIGHT_LLM_BACKEND=openai` when you want that second number, and report whatever comes back.
+That 1.0 is a real output of the script, and it is a narrow one. The offline writer is deterministic, the tasks are three claims from the sample the writer was built to quote, and the metric does not measure whether a live model would verify the claim. It will catch a broken route or a dropped citation. It will not tell you that a live model is ready for users. The retrieval table above is the number that speaks for the embedder.
 
 ## API
 
@@ -195,7 +233,7 @@ That 1.0 is a real output of the script, and it is a narrow one. The offline wri
 ```bash
 curl -N -X POST http://127.0.0.1:8000/v1/research \
   -H 'content-type: application/json' \
-  -d '{"query": "How should a small team evaluate a RAG assistant?", "auto_approve": true}'
+  -d '{"query": "Birth-weight is positively associated with breast cancer.", "auto_approve": true}'
 ```
 
 Uncheck "Auto-approve" in the Streamlit UI to pause on the human node and approve or send the draft back.
@@ -225,14 +263,16 @@ src/briefwright/
   agents/             planner, researcher, analyst, writer, critic, human, finalize
   guardrails/         quarantine and draft checks
   tools/              corpus search and the Python tool
-  memory/             hashing embedder and JSON vector store
+  memory/             hashing memory store; optional MiniLM embedder
   llm/                mock model and OpenAI-compatible client
   observability/      JSON logs, spans, price table
   api/                FastAPI app
   ui/streamlit_app.py demo UI
-  eval/               task set, metrics, runner
-  corpus/documents.json
+  eval/               SciFact claims, metrics, runner
+  corpus/sample/      30 abstracts, qrels, stored MiniLM vectors
 tests/
+scripts/download_scifact.py
+docs/retrieval_results.json
 docs/PROJECT_EXPLAINER.md
 docs/PROJECT_EXPLAINER.pdf
 ```
@@ -241,7 +281,7 @@ docs/PROJECT_EXPLAINER.pdf
 
 **The graph owns the loop.** A chain is the wrong shape once a critic can send work back, and a free-form tool loop hides the route. LangGraph gives conditional edges, a revision cycle, and an interrupt that checkpoints the thread. See `src/briefwright/graph.py`.
 
-**The model does not pick the next node.** `decide_next` looks at sources, whether the question asks for a metric, and whether a draft exists. The planner can propose a bad route in prose and the edge still does the safe thing. The critic sets `send_back` only when `review_draft` fails and `revision_count` is still under `max_revisions`.
+**The model does not pick the next node.** `decide_next` looks at sources, whether the question is a labeled SciFact claim or asks for a metric, and whether a draft exists. A known claim is searched as that claim, so the stored MiniLM vector is the one the metric used. The critic sets `send_back` only when `review_draft` fails and `revision_count` is still under `max_revisions`.
 
 **The guardrail is code.** Required sections, citation ids, quarantined sources, injection phrases, and emails are checked in `src/briefwright/guardrails/checks.py`. The critic model writes a narrative. It cannot flip `passed` to true.
 
@@ -249,7 +289,7 @@ docs/PROJECT_EXPLAINER.pdf
 
 **Three layers of memory.** The graph state is the working set for one run. `MemorySaver` checkpoints that state under a thread id so a human decision can resume it. The JSON vector store is long-term, and `finalize` writes to it only after the brief is approved and the guardrail passed.
 
-**Numbers come from the tool.** The analyst returns Python, `run_python` executes it against the labeled log, and the stdout is copied into the draft. The sample precision figures are that stdout.
+**Numbers come from the tool, and the labels come from SciFact.** The analyst returns Python. `run_python` runs it on binary lists built from the MiniLM ranking and the SciFact evidence ids. The stdout is copied into the draft. The full-corpus precision table is the same idea over all 188 labeled dev claims, with no language model in the loop.
 
 **The mock model is a stand-in, not a hidden network call.** `MockLLM` returns JSON for each role. Token counts are `characters / 4`. The price table rates `mock-research-v1` at zero and `gpt-4o-mini` at the published list price used in `src/briefwright/observability/cost.py`. Swap the client with `create_llm`; the nodes stay the same.
 
@@ -257,7 +297,7 @@ docs/PROJECT_EXPLAINER.pdf
 
 ## Roadmap
 
-- A hosted embedder behind the same `embed` method, kept optional so CI stays offline.
+- Point long-term brief memory at MiniLM as well. It still uses the hashing embedder so a fresh checkout can store briefs without the ONNX weights.
 - A durable checkpointer so a paused review survives a process restart.
 - A second retriever for the live web, still passed through `sanitize_untrusted`.
 - An extra model-graded faithfulness score that cannot override a hard failure.

@@ -23,14 +23,24 @@ The user of this project is me, in an interview, pointing at a run and saying wh
 Given a question, the crew:
 
 1. Recalls any approved prior briefs from a local vector store.
-2. Searches a 14-note local corpus and quarantines untrusted hits.
+2. Searches SciFact abstracts with stored MiniLM vectors and quarantines a hit if it looks like an injection or an email.
 3. If the question asks for a metric, generates Python and runs it on a labeled retrieval log.
 4. Drafts a brief with fixed sections and citation markers.
 5. Runs a deterministic guardrail. On failure, and only while revisions remain, it drafts again.
 6. Stops for a person, or auto-approves when the run is unattended.
 7. Writes the brief into long-term memory only if it was approved and the guardrail passed.
 
-The sample question asks how to combine retrieval, a multi-agent workflow, and guardrails, and it asks for precision at k. One run on the mock backend retrieved 8 notes, quarantined 1, computed `precision_at_1=1.000`, `precision_at_3=0.778`, and `precision_at_5=0.533` over 3 queries, rejected the first draft at score 0.85, accepted the revision at score 1.00, and recorded 5520 prompt tokens and 2728 completion tokens at an estimated cost of 0 USD.
+The sample question is a real SciFact dev claim: "Birth-weight is positively associated with breast cancer." One run of the mock writer on the committed 30-abstract sample retrieved 8 abstracts, quarantined none, and the Python tool printed sample precision 0.667 at 1, 3, and 5 across the 3 bundled claims. For that claim alone it printed 1.000, 0.667, and 0.800. The guardrail scored the first draft 0.85, accepted the revision at 1.00, and the run recorded 12440 prompt tokens and 2732 completion tokens at an estimated cost of 0 USD. Those token counts are the mock's character estimate. Separately, dense MiniLM retrieval over the full dev set, 5183 abstracts and 188 labeled claims, with no language model, scored precision 0.617021, 0.281915, 0.187234, and 0.1 at k of 1, 3, 5, and 10. That second set of figures is in `docs/retrieval_results.json`.
+
+# Dataset
+
+- Name: SciFact dev, Wadden et al., EMNLP 2020. Paper: https://aclanthology.org/2020.emnlp-main.609/
+- Download: https://scifact.s3-us-west-2.amazonaws.com/release/latest/data.tar.gz via `scripts/download_scifact.py`
+- Full size I embedded: 5,183 abstracts and 188 dev claims that have at least one evidence document. Claims with empty evidence are not in the precision average.
+- Committed sample: 30 abstracts and 3 claims, with MiniLM vectors, under `src/briefwright/corpus/sample/`
+- Relevance: an abstract is relevant when the claim's evidence field lists it. Support and contradict both count as relevant for retrieval.
+- License: the code is MIT. The abstracts are not. `allenai/scifact` has no SPDX license (GitHub lists Other). The abstracts come from S2ORC. Current S2ORC is ODC-By 1.0; the original S2ORC release was non-commercial. SciFact is a 2020 snapshot published by AllenAI for this task. Details are in `src/briefwright/corpus/sample/DATA_LICENSE.md`.
+- Embedder: `sentence-transformers/all-MiniLM-L6-v2`, Apache-2.0, 384 dimensions, ONNX on CPU through `fastembed`. The sample stores the vectors so CI stays offline.
 
 # Architecture
 
@@ -60,11 +70,11 @@ Take the default question, the one `briefwright run` uses.
 
 **Planner, first visit.** `run_planner` calls `recall_memory`. On a fresh store that list is empty. The model returns a rationale, a plan, and a search string. Then `decide_next` in `src/briefwright/routing.py` sees no usable sources and returns `research`. The model is not asked which node comes next.
 
-**Researcher.** `search_corpus` ranks the local notes with a hybrid of keyword overlap and hashing-embedder cosine. `sanitize_untrusted` scans each hit. The note `untrusted-paste` contains an instruction to ignore previous directions, the sentence "The capital of France is Mars", and an email address. Those flags quarantine the chunk. The id stays on the state so the trace can show it. The body is replaced with an empty string. The writer later filters with `usable_sources`, so it never sees that body.
+**Researcher.** `search_corpus` ranks abstracts by cosine similarity of `all-MiniLM-L6-v2` vectors. For the three bundled claims those vectors are stored, so the demo does not download the model. `sanitize_untrusted` still scans each hit. The committed sample has no injection line and no email, so this run quarantines nothing. A hit that did match would keep its id on the trace and lose its body before the writer sees it.
 
 **Planner, second visit.** Sources exist, and the question contains "precision", so `needs_analysis` is true and `analysis_attempted` is still false. The next node is the analyst.
 
-**Analyst.** `extract_judgments` pulls the JSON log out of `retrieval-log`. If that note was not in the first search, the analyst searches again for it. The model returns a Python program. `run_python` checks the AST, then runs it in a subprocess with a tight builtin set and a timeout. The stdout is stored on the state as the analysis. The writer is told to copy it, not to recompute it.
+**Analyst.** The node builds `DATA["judgments"]` from the MiniLM ranking and the SciFact evidence ids. The model returns a Python program. `run_python` checks the AST, then runs it in a subprocess with a tight builtin set and a timeout. The stdout is the precision lines in the brief. The writer is told to copy that stdout, not to recompute it.
 
 **Planner, third visit.** Analysis has been attempted and there is no draft, so the next node is the writer.
 
@@ -137,7 +147,7 @@ Both clients implement the same `complete` method and return `LLMResult`: text, 
 
 Every node calls `finish_node`. The trace event has the node name, wall-clock milliseconds, a one-line detail, and, when a model ran, the model name, both token counts, and a cost. The same fields go out as JSON logs on the `briefwright` logger.
 
-`price_usage` looks up a small table. `mock-research-v1` is 0. `gpt-4o-mini` is 0.15 USD per million input tokens and 0.60 per million output tokens. `gpt-4o` is 2.50 and 10.00. Anything else uses the mini rates and is only an estimate. The footer on the brief sums the usage records already on the state. The mock run's estimated cost was 0 because every call used the mock model. The token totals were not zero: 5520 prompt and 2728 completion on the sample question.
+`price_usage` looks up a small table. `mock-research-v1` is 0. `gpt-4o-mini` is 0.15 USD per million input tokens and 0.60 per million output tokens. `gpt-4o` is 2.50 and 10.00. Anything else uses the mini rates and is only an estimate. The footer on the brief sums the usage records already on the state. The mock run's estimated cost was 0 because every call used the mock model. The token totals were not zero: 12440 prompt and 2732 completion on the birth-weight claim, from an empty memory file.
 
 I log the step, not the full prompt. The prompts contain retrieved text, and I do not want that dumped into a shared log by default.
 
@@ -163,7 +173,7 @@ The Streamlit app in `src/briefwright/ui/streamlit_app.py` holds the session in 
 
 The composite is the unweighted mean of those five. The macro score is the mean of the task composites.
 
-`briefwright eval` on the mock backend produced a macro score of 1.0. Each task passed the guardrail after one revision. The architecture task quarantined `untrusted-paste` and did not contain "Mars" or `admin@example.com`. Its valid citations were `retrieval-log`, `rag-pipeline`, `agentic-workflow`, `retrieval-metrics`, and `prompt-injection`. The record is `docs/eval_results.json`.
+`briefwright eval` on the mock backend, over three real SciFact claims, produced a macro score of 1.0. Each task passed the guardrail after one revision. Prompt tokens were 12440, 19603, and 10894. Completion tokens were 2732, 3250, and 3033. The record is `docs/eval_results.json`. Those are mock-writer numbers on real abstracts. They are not the full-corpus retrieval numbers.
 
 I would not describe 1.0 as a quality ceiling. The writer under test is deterministic, the corpus is small and known, and the checks are structural. The harness will fail CI if a route drops the analyst, if citations point nowhere, or if a payload string leaks. It will not fail CI because a live model hemmed and hawed. That second run is optional and should be reported as whatever it returns.
 
@@ -181,7 +191,7 @@ I would not describe 1.0 as a quality ceiling. The writer under test is determin
 
 **Failure handling.** Model calls catch `LLMError` and `ValueError`. The planner falls back to a fixed plan and the raw question as the search string. The researcher keeps a title-only note list. The writer falls back to a draft that the guardrail will reject, so the loop or the cap still applies. The Python tool returns `ExecResult(ok=False)` for unsafe code, a timeout, or a non-zero exit, and the analyst records that string and moves on. Search and memory errors are appended to `errors` and do not raise out of the node. An unexpected exception still propagates. I would rather a test fail than a handler hide a bug. The API stream is the one boundary that catches `Exception`, and it emits an SSE `error` event so the client is not left hanging.
 
-**Why a hashing embedder.** It is deterministic, it has no download, and it makes the offline demo honest about not calling a network. It is a weak semantic model. Hybrid keyword scoring is what makes the right notes surface. Replacing it means a new class with an `embed` method and a rebuilt memory file, because the store checks that the saved dimension matches.
+**Why MiniLM for retrieval and a hash for brief memory.** The retrieval index uses `all-MiniLM-L6-v2`, a 384-d Apache-2.0 model, run locally through ONNX. The committed sample stores those vectors so CI never downloads the weights. A claim that is not in the cache is embedded live when `fastembed` is installed, and otherwise the search falls back to keywords. Long-term memory of past briefs still uses the hashing embedder, because that store has to accept a brand-new paragraph with no network and no ONNX file. The two stores do not share a vector space, and I do not pretend they do.
 
 **Why the mock writer quotes passages.** If the offline model invented a polished essay, the citations would be decoration. Quoting the retrieved text means a reader can see the sentence in the corpus note with the same id. The cost is that the brief reads like an extractive digest. That is the right trade for a demo whose claim is grounding, not style. The live writer prompt asks for the same sections and the same citation rules, in the model's own words.
 
@@ -203,8 +213,8 @@ pytest
 What I would click or point at in a 10-minute demo:
 
 1. Run `briefwright run`. Scroll to the trace. Show research, then analyze, then the critic at 0.85 with `send_back=True`, then the critic at 1.00.
-2. Point at `precision_at_3=0.778` and open `src/briefwright/tools/python_exec.py`. The figure is stdout, not a number I typed into the writer.
-3. Point at `quarantined 1` and open the `untrusted-paste` note. The brief does not say Mars, and it does not contain the email.
+2. Point at `precision_at_3=0.667` and at `focus_precision_at_1=1.000`, then open `src/briefwright/tools/python_exec.py`. Those figures are stdout. The full-dev numbers, 0.617021 at k=1 over 188 claims, are in `docs/retrieval_results.json` and did not pass through the writer.
+3. Open `src/briefwright/corpus/sample/DATA_LICENSE.md` and say which numbers used the mock.
 4. Run `briefwright eval` and read the macro score with the caveat above.
 5. Start `briefwright ui`, uncheck auto-approve, and show the pause. Approve, and show the reviewer note land in the brief.
 6. If there is time, `briefwright serve` and `curl -N` the SSE endpoint. Events are `meta`, `update`, then `done` or `interrupt`.
@@ -215,8 +225,8 @@ A live model is the same demo with `BRIEFWRIGHT_LLM_BACKEND=openai` and a key in
 
 # Limitations
 
-- The corpus is 14 notes I wrote for this project. Recall is illustrative.
-- The embedder is a hashing trick. Keyword overlap does most of the ranking.
+- The default index is 30 SciFact abstracts, not the full 5,183. Full-dev precision is a separate measurement.
+- Long-term brief memory is still a hashing embedder. It is not MiniLM.
 - The mock writer is extractive and scripted, including the first-draft miss.
 - The Python tool is not a security boundary.
 - The checkpointer is in-process memory. A restart drops paused threads.
@@ -246,7 +256,7 @@ A wrapper around one completion does not give me a place to test routing, a tool
 
 ## 3. Walk the sample question.
 
-I start with no sources, so the route is research. Search returns eight notes and quarantines the untrusted paste. The question says precision, so the next route is the analyst, which runs Python over the bundled judgments and prints precision at 1, 3, and 5: 1.000, 0.778, and 0.533, on 3 queries. Then the writer drafts. The offline first draft has no Limitations section, the guardrail scores it 0.85 and sends it back, the second draft includes the section, and the guardrail scores 1.00. Auto-approve finalizes it. The trace shows two writer visits and two critic visits. That specific run used 5520 prompt tokens and 2728 completion tokens.
+I start with no sources, so the route is research. Search returns eight SciFact abstracts and quarantines none. The claim is labeled, so the next route is the analyst, which runs Python over the MiniLM ranking and the SciFact evidence bits. On the 3-claim sample it prints precision 0.667 at 1, 3, and 5, and for this claim 1.000, 0.667, and 0.800. Then the writer drafts. The offline first draft has no Limitations section, the guardrail scores it 0.85 and sends it back, the second draft includes the section, and the guardrail scores 1.00. Auto-approve finalizes it. The trace shows two writer visits and two critic visits. That run, with an empty memory file, used 12440 prompt tokens and 2732 completion tokens. I would then show the full-dev table, which has no LLM in it: precision 0.617021 at k=1 on 188 claims.
 
 ## 4. Why LangGraph instead of a chain or your own while-loop?
 
@@ -274,7 +284,7 @@ Short-term is `ResearchState`: plan, sources, draft, counters, the trace. The ch
 
 ## 10. How does retrieval work with no API key?
 
-The corpus ships in the repo as `src/briefwright/corpus/documents.json`. `HashingEmbedder` maps tokens into a 256-d vector with SHA-256, so the same text always embeds the same way and nothing is downloaded. Search blends that cosine with keyword overlap. On a 14-note collection the keywords do the real work. I would not claim this matches a trained embedding model. I would claim the interface is the same one I would point at a hosted embedder later.
+The committed index is `src/briefwright/corpus/sample/`: 30 abstracts, 3 dev claims, their evidence ids, and 384-d vectors from `all-MiniLM-L6-v2`. CI loads those vectors and does not download anything. `scripts/download_scifact.py` fetches the official tarball, embeds all 5,183 abstracts on CPU, and reprints the full-dev precision. I would not claim MiniLM is a scientific-domain embedder. I would claim the ranking is that model's cosine, and the labels are SciFact's, not mine.
 
 ## 11. Your eval score is 1.0. What does that mean?
 
@@ -310,7 +320,7 @@ The client sends one question and then reads a stream of node updates until `don
 
 ## 19. What will you not claim?
 
-I will not claim the mock score is a live-model score. I will not claim the hashing embedder is a semantic search system. I will not claim the Python subprocess is a secure sandbox. I will not claim the in-memory checkpointer is durable. I will not claim the injection filter is complete. I will not claim a 14-note corpus measures retrieval quality in the wild. The precision figure is true for the bundled three-query log and for nothing else. Those limits are the interesting part of the design, because each one has a specific next step.
+I will not claim the mock score of 1.0 is a live-model score. I will not claim the sample precision of 0.667 is the full-dev precision; that number is 0.617021 at k=1. I will not claim the hashing memory store is MiniLM. I will not claim the Python subprocess is a secure sandbox. I will not claim the in-memory checkpointer is durable. I will not claim the injection filter is complete. I will not claim SciFact dev is the hidden test set; the test labels are not public, so this is the dev split. Those limits are the interesting part of the design, because each one has a specific next step.
 
 ## 20. How is this tested without the network?
 
