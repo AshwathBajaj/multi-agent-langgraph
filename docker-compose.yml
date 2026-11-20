@@ -1,0 +1,39 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      BRIEFWRIGHT_LLM_BACKEND: mock
+      BRIEFWRIGHT_MEMORY_PATH: /app/data/memory.json
+    volumes:
+      - briefwright-data:/app/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ui:
+    build: .
+    command: >
+      streamlit run src/briefwright/ui/streamlit_app.py
+      --server.port 8501 --server.address 0.0.0.0 --server.headless true
+    ports:
+      - "8501:8501"
+    environment:
+      BRIEFWRIGHT_LLM_BACKEND: mock
+      BRIEFWRIGHT_MEMORY_PATH: /app/data/memory.json
+    volumes:
+      - briefwright-data:/app/data
+    depends_on:
+      - api
+
+volumes:
+  briefwright-data:
